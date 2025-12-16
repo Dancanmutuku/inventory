@@ -26,4 +26,5 @@ urlpatterns = [
     # Inventory / Sales (Storekeeper)
     path('storekeeper/receive_stock/', views.receive_stock, name='receive_stock'),
     path('storekeeper/record_sale/', views.record_sale, name='record_sale'),
+    path('storekeeper/move_stock/', views.move_stock, name='move_stock'),
 ]

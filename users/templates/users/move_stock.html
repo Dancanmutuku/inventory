@@ -1,0 +1,71 @@
+{% extends 'users/base_storekeeper.html' %}
+
+{% block title %}Move Stock{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+  <h3 class="mb-4">Move Stock Between Warehouses</h3>
+
+  <form method="post" class="card p-4 shadow-sm" id="moveStockForm">
+    {% csrf_token %}
+
+    <!-- Select Product -->
+    <div class="mb-3">
+      <label for="product" class="form-label">Product</label>
+      <select id="product" name="product" class="form-select" required>
+        <option value="">Select Product</option>
+        {% for product in products %}
+          <option value="{{ product.id }}">{{ product.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- From Warehouse -->
+    <div class="mb-3">
+      <label for="from_warehouse" class="form-label">From Warehouse</label>
+      <select id="from_warehouse" name="from_warehouse" class="form-select" required>
+        <option value="">Select Source Warehouse</option>
+        {% for wh in warehouses %}
+          <option value="{{ wh.id }}">{{ wh.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- To Warehouse -->
+    <div class="mb-3">
+      <label for="to_warehouse" class="form-label">To Warehouse</label>
+      <select id="to_warehouse" name="to_warehouse" class="form-select" required>
+        <option value="">Select Destination Warehouse</option>
+        {% for wh in warehouses %}
+          <option value="{{ wh.id }}">{{ wh.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Quantity -->
+    <div class="mb-3">
+      <label for="quantity" class="form-label">Quantity</label>
+      <input type="number" id="quantity" name="quantity" class="form-control" placeholder="Quantity to move" min="1" required>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="d-grid gap-2">
+      <button type="submit" class="btn btn-warning">Move Stock</button>
+      <a href="{% url 'storekeeper_dashboard' %}" class="btn btn-secondary">Back to Dashboard</a>
+    </div>
+  </form>
+</div>
+
+<!-- JavaScript to prevent same warehouse selection -->
+<script>
+document.getElementById('moveStockForm').addEventListener('submit', function(event) {
+    const fromWarehouse = document.getElementById('from_warehouse').value;
+    const toWarehouse = document.getElementById('to_warehouse').value;
+
+    if (fromWarehouse && toWarehouse && fromWarehouse === toWarehouse) {
+        alert("Source and destination warehouses cannot be the same!");
+        event.preventDefault();  // Stop form submission
+    }
+});
+</script>
+{% endblock %}

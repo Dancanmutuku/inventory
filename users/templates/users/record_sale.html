@@ -9,13 +9,19 @@
   <form method="post" class="card p-4 shadow-sm">
     {% csrf_token %}
 
-    <!-- Customer Name (optional) -->
+    <!-- Customer Name -->
     <div class="mb-3">
       <label for="customer_name" class="form-label">Customer Name</label>
-      <input type="text" id="customer_name" name="customer_name" class="form-control" placeholder="Customer Name (optional)">
+      <input
+        type="text"
+        id="customer_name"
+        name="customer_name"
+        class="form-control"
+        placeholder="Walk-in Customer"
+      >
     </div>
 
-    <!-- Select Product -->
+    <!-- Product -->
     <div class="mb-3">
       <label for="product" class="form-label">Product</label>
       <select id="product" name="product" class="form-select" required>
@@ -26,7 +32,7 @@
       </select>
     </div>
 
-    <!-- Select Warehouse -->
+    <!-- Warehouse -->
     <div class="mb-3">
       <label for="warehouse" class="form-label">Warehouse</label>
       <select id="warehouse" name="warehouse" class="form-select" required>
@@ -40,13 +46,38 @@
     <!-- Quantity -->
     <div class="mb-3">
       <label for="quantity" class="form-label">Quantity</label>
-      <input type="number" id="quantity" name="quantity" class="form-control" placeholder="Quantity" min="1" required>
+      <input
+        type="number"
+        id="quantity"
+        name="quantity"
+        class="form-control"
+        min="1"
+        required
+      >
+    </div>
+
+    <!-- Unit Price -->
+    <div class="mb-3">
+      <label for="unit_price" class="form-label">Unit Price</label>
+      <input
+        type="number"
+        id="unit_price"
+        name="unit_price"
+        class="form-control"
+        step="0.01"
+        min="0"
+        required
+      >
     </div>
 
     <!-- Action Buttons -->
     <div class="d-grid gap-2">
-      <button type="submit" class="btn btn-danger">Record Sale</button>
-      <a href="{% url 'storekeeper_dashboard' %}" class="btn btn-secondary">Back to Dashboard</a>
+      <button type="submit" class="btn btn-danger">
+        Record Sale
+      </button>
+      <a href="{% url 'storekeeper_dashboard' %}" class="btn btn-secondary">
+        Back to Dashboard
+      </a>
     </div>
   </form>
 </div>

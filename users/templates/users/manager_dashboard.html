@@ -8,40 +8,41 @@
   <!-- Welcome -->
   <div class="mb-4">
     <h2>Welcome, {{ request.user.username }}</h2>
-    <p>Role: {{ request.user.role }}</p>
+    {% if request.user.role %}
+    {% endif %}
   </div>
 
   <!-- Summary Cards -->
-  <div class="row mb-4">
-    <div class="col-md-3 mb-3">
+  <div class="row mb-4 g-3">
+    <div class="col-md-3">
       <div class="card text-white bg-primary h-100">
         <div class="card-body">
           <h5 class="card-title">Total Products</h5>
-          <p class="card-text">{{ products.count }}</p>
+          <p class="card-text">{{ products|length }}</p>
         </div>
       </div>
     </div>
-    <div class="col-md-3 mb-3">
+    <div class="col-md-3">
       <div class="card text-white bg-success h-100">
         <div class="card-body">
           <h5 class="card-title">Total Warehouses</h5>
-          <p class="card-text">{{ warehouses.count }}</p>
+          <p class="card-text">{{ warehouses|length }}</p>
         </div>
       </div>
     </div>
-    <div class="col-md-3 mb-3">
+    <div class="col-md-3">
       <div class="card text-white bg-warning h-100">
         <div class="card-body">
           <h5 class="card-title">Total Inventory Items</h5>
-          <p class="card-text">{{ inventory.count }}</p>
+          <p class="card-text">{{ inventory|length }}</p>
         </div>
       </div>
     </div>
-    <div class="col-md-3 mb-3">
+    <div class="col-md-3">
       <div class="card text-white bg-danger h-100">
         <div class="card-body">
           <h5 class="card-title">Total Stock Value</h5>
-          <p class="card-text">{{ total_stock_value|default:"N/A" }}</p>
+          <p class="card-text">{{ total_stock_value|default:"0" }}</p>
         </div>
       </div>
     </div>
@@ -100,6 +101,10 @@
                 </form>
               </td>
             </tr>
+            {% empty %}
+            <tr>
+              <td colspan="6" class="text-center">No products available</td>
+            </tr>
             {% endfor %}
           </tbody>
         </table>
@@ -131,6 +136,10 @@
                 </form>
               </td>
             </tr>
+            {% empty %}
+            <tr>
+              <td colspan="3" class="text-center">No warehouses available</td>
+            </tr>
             {% endfor %}
           </tbody>
         </table>
@@ -155,6 +164,10 @@
               <td>{{ item.warehouse.name }}</td>
               <td>{{ item.quantity }}</td>
             </tr>
+            {% empty %}
+            <tr>
+              <td colspan="3" class="text-center">No inventory available</td>
+            </tr>
             {% endfor %}
           </tbody>
         </table>
@@ -178,9 +191,9 @@
             {% for item in recent_received %}
             <tr>
               <td>{{ item.product.name }}</td>
-              <td>{{ item.purchase_order.warehouse.name }}</td>
+              <td>{{ item.warehouse.name }}</td>
               <td>{{ item.quantity }}</td>
-              <td>{{ item.purchase_order.created_at|date:"Y-m-d H:i" }}</td>
+              <td>{{ item.created_at|date:"Y-m-d H:i" }}</td>
             </tr>
             {% empty %}
             <tr>
@@ -206,9 +219,9 @@
             {% for item in recent_sold %}
             <tr>
               <td>{{ item.product.name }}</td>
-              <td>{{ item.sales_order.warehouse.name }}</td>
+              <td>{{ item.warehouse.name }}</td>
               <td>{{ item.quantity }}</td>
-              <td>{{ item.sales_order.created_at|date:"Y-m-d H:i" }}</td>
+              <td>{{ item.created_at|date:"Y-m-d H:i" }}</td>
             </tr>
             {% empty %}
             <tr>
@@ -222,43 +235,181 @@
 
     <!-- Analytics & Reports Tab -->
     <div class="tab-pane fade" id="analytics" role="tabpanel">
-      <h5 class="mt-3">Analytics & Reports</h5>
-      <p>Optional: Display charts or graphs here using Chart.js or other libraries.</p>
+    <div class="row g-4 mt-3">
 
-      <ul>
-        <li>Low-stock alerts</li>
-        <li>Stock movement trends</li>
-        <li>Profit/loss estimation per product or warehouse</li>
-      </ul>
+        <!-- Total Sales per Warehouse -->
+        <div class="col-lg-6 col-md-12">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-primary text-white">Total Sales per Warehouse</div>
+            <div class="card-body" style="height:300px;">
+            <canvas id="salesWarehouseChart"></canvas>
+            </div>
+        </div>
+        </div>
 
-      <!-- Example Chart Placeholder -->
-      <canvas id="stockChart" width="400" height="150"></canvas>
+        <!-- Revenue per Warehouse -->
+        <div class="col-lg-6 col-md-12">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-success text-white">Revenue per Warehouse</div>
+            <div class="card-body" style="height:300px;">
+            <canvas id="revenueWarehouseChart"></canvas>
+            </div>
+        </div>
+        </div>
+
+        <!-- Top Selling Products -->
+        <div class="col-lg-6 col-md-12">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-warning text-dark">Top Selling Products</div>
+            <div class="card-body" style="height:300px;">
+            <canvas id="topProductsChart"></canvas>
+            </div>
+        </div>
+        </div>
+
+        <!-- Stock Movement (Received vs Sold) -->
+        <div class="col-lg-6 col-md-12">
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-info text-white">Stock Movement (Received vs Sold)</div>
+            <div class="card-body" style="height:300px;">
+            <canvas id="stockMovementChart"></canvas>
+            </div>
+        </div>
+        </div>
+
+    </div>
     </div>
 
-  </div>
-</div>
+    <!-- Django JSON safe injection -->
+    {{ sales_per_warehouse_labels|json_script:"salesWarehouseLabels" }}
+    {{ sales_per_warehouse_data|json_script:"salesWarehouseData" }}
+    {{ revenue_per_warehouse_labels|json_script:"revenueWarehouseLabels" }}
+    {{ revenue_per_warehouse_data|json_script:"revenueWarehouseData" }}
+    {{ top_products_labels|json_script:"topProductsLabels" }}
+    {{ top_products_data|json_script:"topProductsData" }}
+    {{ stock_movement_labels|json_script:"stockMovementLabels" }}
+    {{ stock_received_data|json_script:"stockReceivedData" }}
+    {{ stock_sold_data|json_script:"stockSoldData" }}
 
-<!-- Bootstrap JS for Tabs -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Bootstrap JS Bundle -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Chart.js Library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-<!-- Optional: Chart.js for Analytics -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-  // Example Chart.js code (replace with dynamic data)
-  const ctx = document.getElementById('stockChart').getContext('2d');
-  const stockChart = new Chart(ctx, {
-    type: 'bar',
+    <script>
+    // Parse JSON safely from Django
+    const salesWarehouseLabels = JSON.parse(document.getElementById('salesWarehouseLabels').textContent);
+    const salesWarehouseData = JSON.parse(document.getElementById('salesWarehouseData').textContent);
+    const revenueWarehouseLabels = JSON.parse(document.getElementById('revenueWarehouseLabels').textContent);
+    const revenueWarehouseData = JSON.parse(document.getElementById('revenueWarehouseData').textContent);
+    const topProductsLabels = JSON.parse(document.getElementById('topProductsLabels').textContent);
+    const topProductsData = JSON.parse(document.getElementById('topProductsData').textContent);
+    const stockMovementLabels = JSON.parse(document.getElementById('stockMovementLabels').textContent);
+    const stockReceivedData = JSON.parse(document.getElementById('stockReceivedData').textContent);
+    const stockSoldData = JSON.parse(document.getElementById('stockSoldData').textContent);
+
+    // Chart: Total Sales per Warehouse
+    new Chart(document.getElementById('salesWarehouseChart'), {
+        type: 'bar',
+        data: {
+        labels: salesWarehouseLabels,
+        datasets: [{
+            label: 'Number of Sales',
+            data: salesWarehouseData,
+            backgroundColor: 'rgba(54, 162, 235, 0.7)',
+            borderColor: 'rgba(54, 162, 235, 1)',
+            borderWidth: 1
+        }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+    });
+
+    // Chart: Revenue per Warehouse
+    new Chart(document.getElementById('revenueWarehouseChart'), {
+        type: 'bar',
+        data: {
+        labels: revenueWarehouseLabels,
+        datasets: [{
+            label: 'Revenue ($)',
+            data: revenueWarehouseData,
+            backgroundColor: 'rgba(75, 192, 192, 0.7)',
+            borderColor: 'rgba(75, 192, 192, 1)',
+            borderWidth: 1
+        }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+    });
+
+    // Chart: Top Selling Products
+    new Chart(document.getElementById('topProductsChart'), {
+        type: 'bar',
+        data: {
+        labels: topProductsLabels,
+        datasets: [{
+            label: 'Units Sold',
+            data: topProductsData,
+            backgroundColor: 'rgba(255, 206, 86, 0.7)',
+            borderColor: 'rgba(255, 206, 86, 1)',
+            borderWidth: 1
+        }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+    });
+
+    // Chart: Stock Movement (Received vs Sold)
+    const ctxStock = document.getElementById('stockMovementChart').getContext('2d');
+
+new Chart(ctxStock, {
+    type: 'line', // Use line chart
     data: {
-      labels: ['Product A', 'Product B', 'Product C'],
-      datasets: [{
-        label: 'Quantity',
-        data: [12, 19, 7],
-        backgroundColor: 'rgba(54, 162, 235, 0.6)',
-        borderColor: 'rgba(54, 162, 235, 1)',
-        borderWidth: 1
-      }]
+        labels: stockMovementLabels, // Months
+        datasets: [
+            {
+                label: 'Stock Received',
+                data: stockReceivedData,
+                borderColor: 'rgba(54, 162, 235, 1)',
+                backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                tension: 0.4, // Smooth curve
+                fill: true
+            },
+            {
+                label: 'Stock Sold',
+                data: stockSoldData,
+                borderColor: 'rgba(255, 99, 132, 1)',
+                backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                tension: 0.4, // Smooth curve
+                fill: true
+            }
+        ]
     },
-    options: { scales: { y: { beginAtZero: true } } }
-  });
-</script>
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'top'
+            },
+            tooltip: {
+                mode: 'index',
+                intersect: false
+            }
+        },
+        scales: {
+            x: {
+                title: {
+                    display: true,
+                    text: 'Month'
+                }
+            },
+            y: {
+                beginAtZero: true,
+                title: {
+                    display: true,
+                    text: 'Quantity'
+                }
+            }
+        }
+    }
+});
+    </script>
 {% endblock %}

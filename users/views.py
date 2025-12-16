@@ -7,13 +7,16 @@ from django.contrib import messages
 # Import your models
 from products.models import Product, Category
 from warehouses.models import Warehouse
-from inventory.models import Inventory
-from purchases.models import PurchaseOrder, PurchaseItem
+from inventory.models import Inventory, StockMovement
+from purchases.models import PurchaseItem, PurchaseOrder
 from sales.models import SalesOrder, SalesItem
 
 from django.contrib.auth import logout
 from django.shortcuts import redirect
 from suppliers.models import Supplier 
+from django.db import transaction
+from decimal import Decimal
+
 
 
 def user_logout(request):
@@ -69,31 +72,104 @@ def storekeeper_login(request):
 
 
 # Dashboards
+from django.db.models import Sum, F
+from django.shortcuts import render
+from sales.models import SalesOrder, SalesItem
+from warehouses.models import Warehouse
+from inventory.models import Inventory, StockMovement
+from products.models import Product
+from django.utils.timezone import now
+from datetime import timedelta
+
+
 @login_required
-@user_passes_test(is_manager)
 def manager_dashboard(request):
+    # Basic data for cards
     products = Product.objects.all()
     warehouses = Warehouse.objects.all()
-    inventory = Inventory.objects.select_related('product', 'warehouse').all()
+    inventory = Inventory.objects.all()
+    total_stock_value = inventory.aggregate(
+        total_value=Sum(F('quantity') * F('product__cost_price'))
+    )['total_value']
 
-    # Pull stock activity
-    recent_received = PurchaseItem.objects.select_related(
-        'product', 'purchase_order__warehouse'
-    ).all().order_by('-purchase_order__created_at')[:10]  # optional: limit to 10
+    # Recent Stock Activity (Last 10)
+    recent_received = StockMovement.objects.filter(movement_type='IN')\
+        .select_related('product', 'warehouse').order_by('-created_at')[:10]
+    recent_sold = StockMovement.objects.filter(movement_type='OUT')\
+        .select_related('product', 'warehouse').order_by('-created_at')[:10]
 
-    recent_sold = SalesItem.objects.select_related(
-        'product', 'sales_order__warehouse'
-    ).all().order_by('-sales_order__created_at')[:10]  # optional: limit to 10
+    # ----- Analytics & Reports -----
+    # 1. Total Sales per Warehouse
+    sales_per_warehouse = StockMovement.objects.filter(movement_type='OUT')\
+        .values('warehouse__name')\
+        .annotate(num_sales=Sum('quantity'))
+    sales_per_warehouse_labels = [s['warehouse__name'] for s in sales_per_warehouse]
+    sales_per_warehouse_data = [s['num_sales'] or 0 for s in sales_per_warehouse]
+
+    # 2. Revenue per Warehouse
+    revenue_per_warehouse_labels = []
+    revenue_per_warehouse_data = []
+    for warehouse in warehouses:
+        sold_items = StockMovement.objects.filter(
+            movement_type='OUT', warehouse=warehouse
+        ).select_related('product')
+        revenue = sum(item.product.selling_price * item.quantity for item in sold_items)
+        revenue_per_warehouse_labels.append(warehouse.name)
+        revenue_per_warehouse_data.append(revenue)
+
+    # 3. Top Selling Products
+    top_products = StockMovement.objects.filter(movement_type='OUT')\
+        .values('product__name')\
+        .annotate(units_sold=Sum('quantity'))\
+        .order_by('-units_sold')[:10]
+    top_products_labels = [p['product__name'] for p in top_products]
+    top_products_data = [p['units_sold'] or 0 for p in top_products]
+
+    # 4. Stock Movement Over Time (Last 6 months)
+    months = []
+    stock_received_data = []
+    stock_sold_data = []
+
+    for i in range(5, -1, -1):
+        month_start = (now() - timedelta(days=i*30)).replace(day=1)
+        month_label = month_start.strftime('%b %Y')
+        months.append(month_label)
+
+        # Stock Received
+        received = StockMovement.objects.filter(
+            movement_type='IN',
+            created_at__year=month_start.year,
+            created_at__month=month_start.month
+        ).aggregate(total=Sum('quantity'))['total'] or 0
+        stock_received_data.append(received)
+
+        # Stock Sold
+        sold = StockMovement.objects.filter(
+            movement_type='OUT',
+            created_at__year=month_start.year,
+            created_at__month=month_start.month
+        ).aggregate(total=Sum('quantity'))['total'] or 0
+        stock_sold_data.append(sold)
 
     context = {
         'products': products,
         'warehouses': warehouses,
         'inventory': inventory,
+        'total_stock_value': total_stock_value,
         'recent_received': recent_received,
         'recent_sold': recent_sold,
+        'sales_per_warehouse_labels': sales_per_warehouse_labels,
+        'sales_per_warehouse_data': sales_per_warehouse_data,
+        'revenue_per_warehouse_labels': revenue_per_warehouse_labels,
+        'revenue_per_warehouse_data': revenue_per_warehouse_data,
+        'top_products_labels': top_products_labels,
+        'top_products_data': top_products_data,
+        'stock_movement_labels': months,
+        'stock_received_data': stock_received_data,
+        'stock_sold_data': stock_sold_data,
     }
-    return render(request, 'users/manager_dashboard.html', context)
 
+    return render(request, 'users/manager_dashboard.html', context)
 
 @login_required
 @user_passes_test(is_storekeeper)
@@ -236,39 +312,39 @@ def is_storekeeper(user):
 
 # -------------------------
 # Receive Stock
-# -------------------------
 @login_required
 @user_passes_test(is_storekeeper)
+@transaction.atomic
 def receive_stock(request):
     products = Product.objects.all()
     warehouses = Warehouse.objects.all()
-    suppliers = Supplier.objects.all()  # suppliers to select from
+    suppliers = Supplier.objects.all()
 
     if request.method == 'POST':
-        product_id = int(request.POST['product'])
-        warehouse_id = int(request.POST['warehouse'])
-        supplier_id = int(request.POST['supplier'])
+        product = get_object_or_404(Product, id=request.POST['product'])
+        warehouse = get_object_or_404(Warehouse, id=request.POST['warehouse'])
+        supplier = get_object_or_404(Supplier, id=request.POST['supplier'])
+
         quantity = int(request.POST['quantity'])
-        unit_cost = float(request.POST.get('unit_cost', 0))
+        unit_cost = Decimal(request.POST['unit_cost'])
 
-        product = get_object_or_404(Product, id=product_id)
-        warehouse = get_object_or_404(Warehouse, id=warehouse_id)
-        supplier = get_object_or_404(Supplier, id=supplier_id)
+        if quantity <= 0:
+            messages.error(request, 'Quantity must be greater than zero.')
+            return redirect('receive_stock')
 
-        # Create or get inventory
-        inventory, _ = Inventory.objects.get_or_create(
-            product=product, warehouse=warehouse, defaults={'quantity': 0}
-        )
-        inventory.quantity += quantity
-        inventory.save()
+        if unit_cost <= 0:
+            messages.error(request, 'Unit cost must be greater than zero.')
+            return redirect('receive_stock')
 
-        # Create purchase order and purchase item
+        # 1. Create Purchase Order
         purchase_order = PurchaseOrder.objects.create(
             supplier=supplier,
             warehouse=warehouse,
             status='RECEIVED',
             total_cost=unit_cost * quantity
         )
+
+        # 2. Create Purchase Item
         PurchaseItem.objects.create(
             purchase_order=purchase_order,
             product=product,
@@ -276,20 +352,34 @@ def receive_stock(request):
             unit_cost=unit_cost
         )
 
+        # 3. Update Inventory
+        inventory, _ = Inventory.objects.get_or_create(
+            product=product,
+            warehouse=warehouse,
+            defaults={'quantity': 0}
+        )
+        inventory.quantity += quantity
+        inventory.save()
+
+        # 4. Record Stock Movement
+        StockMovement.objects.create(
+            product=product,
+            warehouse=warehouse,
+            movement_type='IN',
+            quantity=quantity
+        )
+
         messages.success(request, 'Stock received successfully.')
         return redirect('storekeeper_dashboard')
 
-    context = {
+    return render(request, 'users/receive_stock.html', {
         'products': products,
         'warehouses': warehouses,
         'suppliers': suppliers
-    }
-    return render(request, 'users/receive_stock.html', context)
-
+    })
 
 # -------------------------
 # Record Sale
-# -------------------------
 @login_required
 @user_passes_test(is_storekeeper)
 def record_sale(request):
@@ -297,29 +387,48 @@ def record_sale(request):
     warehouses = Warehouse.objects.all()
 
     if request.method == 'POST':
-        product_id = int(request.POST['product'])
-        warehouse_id = int(request.POST['warehouse'])
-        quantity = int(request.POST['quantity'])
-        unit_price = float(request.POST.get('unit_price', 0))
+        product_id = request.POST.get('product')
+        warehouse_id = request.POST.get('warehouse')
+        quantity = int(request.POST.get('quantity'))
+        unit_price = float(request.POST.get('unit_price'))
         customer_name = request.POST.get('customer_name', 'Walk-in Customer')
 
         product = get_object_or_404(Product, id=product_id)
         warehouse = get_object_or_404(Warehouse, id=warehouse_id)
 
-        inventory = get_object_or_404(Inventory, product=product, warehouse=warehouse)
-        if quantity > inventory.quantity:
-            messages.error(request, 'Not enough stock!')
-            return redirect('storekeeper_dashboard')
+        # Get inventory
+        inventory = Inventory.objects.filter(
+            product=product,
+            warehouse=warehouse
+        ).first()
 
+        if not inventory:
+            messages.error(request, 'Product not found in this warehouse.')
+            return redirect('record_sale')
+
+        if quantity > inventory.quantity:
+            messages.error(request, 'Not enough stock available.')
+            return redirect('record_sale')
+
+        # Reduce inventory
         inventory.quantity -= quantity
         inventory.save()
 
-        # Create sales order and item
+        # Record stock movement (OUT)
+        StockMovement.objects.create(
+            product=product,
+            warehouse=warehouse,
+            quantity=quantity,
+            movement_type='OUT'
+        )
+
+        # Optional: Sales Order (recommended for reports)
         sales_order = SalesOrder.objects.create(
             customer_name=customer_name,
             warehouse=warehouse,
             total_amount=unit_price * quantity
         )
+
         SalesItem.objects.create(
             sales_order=sales_order,
             product=product,
@@ -335,3 +444,45 @@ def record_sale(request):
         'warehouses': warehouses
     }
     return render(request, 'users/record_sale.html', context)
+
+@login_required
+@user_passes_test(is_storekeeper)
+def move_stock(request):
+    products = Product.objects.all()
+    warehouses = Warehouse.objects.all()
+
+    if request.method == 'POST':
+        product_id = request.POST['product']
+        from_warehouse_id = request.POST['from_warehouse']
+        to_warehouse_id = request.POST['to_warehouse']
+        quantity = int(request.POST['quantity'])
+
+        product = get_object_or_404(Product, id=product_id)
+        from_wh = get_object_or_404(Warehouse, id=from_warehouse_id)
+        to_wh = get_object_or_404(Warehouse, id=to_warehouse_id)
+
+        from_inventory = get_object_or_404(Inventory, product=product, warehouse=from_wh)
+        to_inventory, created = Inventory.objects.get_or_create(product=product, warehouse=to_wh, defaults={'quantity': 0})
+
+        if quantity > from_inventory.quantity:
+            messages.error(request, "Not enough stock to transfer!")
+            return redirect('move_stock')
+
+        # Update inventories
+        from_inventory.quantity -= quantity
+        from_inventory.save()
+        to_inventory.quantity += quantity
+        to_inventory.save()
+
+        # Record stock movements
+        StockMovement.objects.create(product=product, warehouse=from_wh, quantity=quantity, movement_type='OUT')
+        StockMovement.objects.create(product=product, warehouse=to_wh, quantity=quantity, movement_type='IN')
+
+        messages.success(request, "Stock moved successfully!")
+        return redirect('move_stock')
+
+    context = {
+        'products': products,
+        'warehouses': warehouses,
+    }
+    return render(request, 'users/move_stock.html', context)

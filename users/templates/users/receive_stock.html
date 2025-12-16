@@ -4,61 +4,105 @@
 
 {% block content %}
 <div class="container mt-5">
-  <h3 class="mb-4">Receive Stock</h3>
 
-  <form method="post" class="card p-4 shadow-sm">
-    {% csrf_token %}
+  <div class="row justify-content-center">
+    <div class="col-lg-6 col-md-8">
 
-    <!-- Select Product -->
-    <div class="mb-3">
-      <label>Product</label>
-      <select name="product" class="form-select" required>
-        <option value="">Select Product</option>
-        {% for product in products %}
-          <option value="{{ product.id }}">{{ product.name }}</option>
+      <h3 class="mb-4 text-center">Receive Stock</h3>
+
+      <!-- System Messages -->
+      {% if messages %}
+        {% for message in messages %}
+          <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+          </div>
         {% endfor %}
-      </select>
-    </div>
+      {% endif %}
 
-    <!-- Select Warehouse -->
-    <div class="mb-3">
-      <label>Warehouse</label>
-      <select name="warehouse" class="form-select" required>
-        <option value="">Select Warehouse</option>
-        {% for wh in warehouses %}
-          <option value="{{ wh.id }}">{{ wh.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
+      <form method="post" class="card p-4 shadow-sm">
+        {% csrf_token %}
 
-    <!-- Select Supplier -->
-    <div class="mb-3">
-      <label>Supplier</label>
-      <select name="supplier" class="form-select" required>
-        <option value="">Select Supplier</option>
-        {% for sup in suppliers %}
-          <option value="{{ sup.id }}">{{ sup.name }}</option>
-        {% endfor %}
-      </select>
-    </div>
+        <!-- Product -->
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Product</label>
+          <select name="product" class="form-select" required>
+            <option value="" disabled selected>Select product</option>
+            {% for product in products %}
+              <option value="{{ product.id }}">{{ product.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
 
-    <!-- Quantity -->
-    <div class="mb-3">
-      <label>Quantity</label>
-      <input type="number" name="quantity" class="form-control" placeholder="Quantity" min="1" required>
-    </div>
+        <!-- Warehouse -->
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Warehouse</label>
+          <select name="warehouse" class="form-select" required>
+            <option value="" disabled selected>Select warehouse</option>
+            {% for wh in warehouses %}
+              <option value="{{ wh.id }}">{{ wh.name }}</option>
+            {% endfor %}
+          </select>
+          <div class="form-text">
+            Stock will be added to this warehouse inventory.
+          </div>
+        </div>
 
-    <!-- Unit Cost -->
-    <div class="mb-3">
-      <label>Unit Cost</label>
-      <input type="number" step="0.01" name="unit_cost" class="form-control" placeholder="Unit Cost" min="0" required>
-    </div>
+        <!-- Supplier -->
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Supplier</label>
+          <select name="supplier" class="form-select" required>
+            <option value="" disabled selected>Select supplier</option>
+            {% for sup in suppliers %}
+              <option value="{{ sup.id }}">{{ sup.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
 
-    <!-- Action Buttons -->
-    <div class="d-grid gap-2">
-      <button type="submit" class="btn btn-success">Receive Stock</button>
-      <a href="{% url 'storekeeper_dashboard' %}" class="btn btn-secondary">Back to Dashboard</a>
+        <!-- Quantity -->
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Quantity Received</label>
+          <input
+            type="number"
+            name="quantity"
+            class="form-control"
+            placeholder="Enter quantity"
+            min="1"
+            required
+          >
+        </div>
+
+        <!-- Unit Cost -->
+        <div class="mb-4">
+          <label class="form-label fw-semibold">Unit Cost</label>
+          <input
+            type="number"
+            step="0.01"
+            min="0.01"
+            name="unit_cost"
+            class="form-control"
+            placeholder="Cost per unit"
+            required
+          >
+          <div class="form-text">
+            Used to calculate purchase order total value.
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="d-grid gap-2">
+          <button type="submit" class="btn btn-success">
+            Receive Stock
+          </button>
+          <a href="{% url 'storekeeper_dashboard' %}" class="btn btn-outline-secondary">
+            Cancel & Return
+          </a>
+        </div>
+
+      </form>
+
     </div>
-  </form>
+  </div>
+
 </div>
 {% endblock %}
