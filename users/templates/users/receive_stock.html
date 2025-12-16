@@ -1,0 +1,22 @@
+<form method="post" class="card p-4 shadow-sm">
+  {% csrf_token %}
+  <h4>Receive Stock</h4>
+  <div class="mb-3">
+    <select name="product" class="form-select">
+      {% for product in products %}
+        <option value="{{ product.id }}">{{ product.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="mb-3">
+    <select name="warehouse" class="form-select">
+      {% for wh in warehouses %}
+        <option value="{{ wh.id }}">{{ wh.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="mb-3">
+    <input type="number" name="quantity" class="form-control" placeholder="Quantity" required>
+  </div>
+  <button type="submit" class="btn btn-success w-100">Receive Stock</button>
+</form>
