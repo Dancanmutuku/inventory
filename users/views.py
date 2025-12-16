@@ -11,6 +11,23 @@ from inventory.models import Inventory
 from purchases.models import PurchaseOrder, PurchaseItem
 from sales.models import SalesOrder, SalesItem
 
+from django.contrib.auth import logout
+from django.shortcuts import redirect
+from suppliers.models import Supplier 
+
+
+def user_logout(request):
+    """Logs out any user and redirects them to the appropriate login page based on role."""
+    role = getattr(request.user, 'role', None)
+    logout(request)
+
+    if role == 'MANAGER':
+        return redirect('manager_login')
+    elif role == 'STOREKEEPER':
+        return redirect('storekeeper_login')
+    else:
+        return redirect('manager_login')  # default fallback
+
 # -------------------------
 # Helper functions for roles
 # -------------------------
@@ -51,19 +68,29 @@ def storekeeper_login(request):
     return render(request, 'users/storekeeper_login.html')
 
 
-# -------------------------
 # Dashboards
-# -------------------------
 @login_required
 @user_passes_test(is_manager)
 def manager_dashboard(request):
     products = Product.objects.all()
     warehouses = Warehouse.objects.all()
     inventory = Inventory.objects.select_related('product', 'warehouse').all()
+
+    # Pull stock activity
+    recent_received = PurchaseItem.objects.select_related(
+        'product', 'purchase_order__warehouse'
+    ).all().order_by('-purchase_order__created_at')[:10]  # optional: limit to 10
+
+    recent_sold = SalesItem.objects.select_related(
+        'product', 'sales_order__warehouse'
+    ).all().order_by('-sales_order__created_at')[:10]  # optional: limit to 10
+
     context = {
         'products': products,
         'warehouses': warehouses,
-        'inventory': inventory
+        'inventory': inventory,
+        'recent_received': recent_received,
+        'recent_sold': recent_sold,
     }
     return render(request, 'users/manager_dashboard.html', context)
 
@@ -71,39 +98,70 @@ def manager_dashboard(request):
 @login_required
 @user_passes_test(is_storekeeper)
 def storekeeper_dashboard(request):
+    # Inventory visible to storekeeper
     inventory = Inventory.objects.select_related('product', 'warehouse').all()
-    context = {'inventory': inventory}
+    
+    # Products list (for CRUD)
+    products = Product.objects.all()
+    
+    # Summary calculations
+    total_products = products.count()
+    total_stock = sum(item.quantity for item in inventory)
+    low_stock_count = sum(1 for item in inventory if item.quantity < 10)  # threshold = 10
+    
+    context = {
+        'inventory': inventory,
+        'products': products,
+        'total_products': total_products,
+        'total_stock': total_stock,
+        'low_stock_count': low_stock_count,
+    }
+    
     return render(request, 'users/storekeeper_dashboard.html', context)
-
 
 # -------------------------
 # Manager: Product CRUD
 # -------------------------
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib import messages
+from products.models import Product, Category
+from django.contrib.auth.decorators import login_required
+
 @login_required
-@user_passes_test(is_manager)
 def add_product(request):
     categories = Category.objects.all()
+    
     if request.method == 'POST':
         name = request.POST['name']
         sku = request.POST['sku']
         category_id = request.POST['category']
         cost_price = request.POST['cost_price']
         selling_price = request.POST['selling_price']
+
         category = get_object_or_404(Category, id=category_id)
         Product.objects.create(
             name=name, sku=sku, category=category,
             cost_price=cost_price, selling_price=selling_price
         )
         messages.success(request, 'Product added successfully.')
-        return redirect('manager_dashboard')
-    return render(request, 'users/add_product.html', {'categories': categories})
+
+        # Redirect to respective dashboard
+        if request.user.role == 'MANAGER':
+            return redirect('manager_dashboard')
+        else:
+            return redirect('storekeeper_dashboard')
+
+    # Choose base template dynamically
+    base_template = 'users/base_manager.html' if request.user.role == 'MANAGER' else 'users/base_storekeeper.html'
+    
+    return render(request, 'users/add_product.html', {'categories': categories, 'base_template': base_template})
 
 
 @login_required
-@user_passes_test(is_manager)
 def edit_product(request, product_id):
     product = get_object_or_404(Product, id=product_id)
     categories = Category.objects.all()
+
     if request.method == 'POST':
         product.name = request.POST['name']
         product.sku = request.POST['sku']
@@ -112,8 +170,15 @@ def edit_product(request, product_id):
         product.selling_price = request.POST['selling_price']
         product.save()
         messages.success(request, 'Product updated successfully.')
-        return redirect('manager_dashboard')
-    return render(request, 'users/edit_product.html', {'product': product, 'categories': categories})
+
+        if request.user.role == 'MANAGER':
+            return redirect('manager_dashboard')
+        else:
+            return redirect('storekeeper_dashboard')
+
+    base_template = 'users/base_manager.html' if request.user.role == 'MANAGER' else 'users/base_storekeeper.html'
+
+    return render(request, 'users/edit_product.html', {'product': product, 'categories': categories, 'base_template': base_template})
 
 
 @login_required
@@ -166,45 +231,107 @@ def delete_warehouse(request, warehouse_id):
 
 # -------------------------
 # Storekeeper: Stock Operations
+def is_storekeeper(user):
+    return user.role == 'STOREKEEPER'
+
+# -------------------------
+# Receive Stock
 # -------------------------
 @login_required
 @user_passes_test(is_storekeeper)
 def receive_stock(request):
     products = Product.objects.all()
     warehouses = Warehouse.objects.all()
+    suppliers = Supplier.objects.all()  # suppliers to select from
+
     if request.method == 'POST':
-        product_id = request.POST['product']
-        warehouse_id = request.POST['warehouse']
+        product_id = int(request.POST['product'])
+        warehouse_id = int(request.POST['warehouse'])
+        supplier_id = int(request.POST['supplier'])
         quantity = int(request.POST['quantity'])
+        unit_cost = float(request.POST.get('unit_cost', 0))
+
         product = get_object_or_404(Product, id=product_id)
         warehouse = get_object_or_404(Warehouse, id=warehouse_id)
-        inventory, created = Inventory.objects.get_or_create(
+        supplier = get_object_or_404(Supplier, id=supplier_id)
+
+        # Create or get inventory
+        inventory, _ = Inventory.objects.get_or_create(
             product=product, warehouse=warehouse, defaults={'quantity': 0}
         )
         inventory.quantity += quantity
         inventory.save()
-        messages.success(request, 'Stock updated successfully.')
+
+        # Create purchase order and purchase item
+        purchase_order = PurchaseOrder.objects.create(
+            supplier=supplier,
+            warehouse=warehouse,
+            status='RECEIVED',
+            total_cost=unit_cost * quantity
+        )
+        PurchaseItem.objects.create(
+            purchase_order=purchase_order,
+            product=product,
+            quantity=quantity,
+            unit_cost=unit_cost
+        )
+
+        messages.success(request, 'Stock received successfully.')
         return redirect('storekeeper_dashboard')
-    return render(request, 'users/receive_stock.html', {'products': products, 'warehouses': warehouses})
+
+    context = {
+        'products': products,
+        'warehouses': warehouses,
+        'suppliers': suppliers
+    }
+    return render(request, 'users/receive_stock.html', context)
 
 
+# -------------------------
+# Record Sale
+# -------------------------
 @login_required
 @user_passes_test(is_storekeeper)
 def record_sale(request):
     products = Product.objects.all()
     warehouses = Warehouse.objects.all()
+
     if request.method == 'POST':
         product_id = int(request.POST['product'])
         warehouse_id = int(request.POST['warehouse'])
         quantity = int(request.POST['quantity'])
+        unit_price = float(request.POST.get('unit_price', 0))
+        customer_name = request.POST.get('customer_name', 'Walk-in Customer')
+
         product = get_object_or_404(Product, id=product_id)
         warehouse = get_object_or_404(Warehouse, id=warehouse_id)
+
         inventory = get_object_or_404(Inventory, product=product, warehouse=warehouse)
         if quantity > inventory.quantity:
             messages.error(request, 'Not enough stock!')
             return redirect('storekeeper_dashboard')
+
         inventory.quantity -= quantity
         inventory.save()
+
+        # Create sales order and item
+        sales_order = SalesOrder.objects.create(
+            customer_name=customer_name,
+            warehouse=warehouse,
+            total_amount=unit_price * quantity
+        )
+        SalesItem.objects.create(
+            sales_order=sales_order,
+            product=product,
+            quantity=quantity,
+            unit_price=unit_price
+        )
+
         messages.success(request, 'Sale recorded successfully.')
         return redirect('storekeeper_dashboard')
-    return render(request, 'users/record_sale.html', {'products': products, 'warehouses': warehouses})
+
+    context = {
+        'products': products,
+        'warehouses': warehouses
+    }
+    return render(request, 'users/record_sale.html', context)

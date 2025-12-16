@@ -1,0 +1,53 @@
+{% extends 'users/base_storekeeper.html' %}
+
+{% block title %}Record Sale{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+  <h3 class="mb-4">Record Sale</h3>
+
+  <form method="post" class="card p-4 shadow-sm">
+    {% csrf_token %}
+
+    <!-- Customer Name (optional) -->
+    <div class="mb-3">
+      <label for="customer_name" class="form-label">Customer Name</label>
+      <input type="text" id="customer_name" name="customer_name" class="form-control" placeholder="Customer Name (optional)">
+    </div>
+
+    <!-- Select Product -->
+    <div class="mb-3">
+      <label for="product" class="form-label">Product</label>
+      <select id="product" name="product" class="form-select" required>
+        <option value="">Select Product</option>
+        {% for product in products %}
+          <option value="{{ product.id }}">{{ product.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Select Warehouse -->
+    <div class="mb-3">
+      <label for="warehouse" class="form-label">Warehouse</label>
+      <select id="warehouse" name="warehouse" class="form-select" required>
+        <option value="">Select Warehouse</option>
+        {% for wh in warehouses %}
+          <option value="{{ wh.id }}">{{ wh.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Quantity -->
+    <div class="mb-3">
+      <label for="quantity" class="form-label">Quantity</label>
+      <input type="number" id="quantity" name="quantity" class="form-control" placeholder="Quantity" min="1" required>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="d-grid gap-2">
+      <button type="submit" class="btn btn-danger">Record Sale</button>
+      <a href="{% url 'storekeeper_dashboard' %}" class="btn btn-secondary">Back to Dashboard</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
